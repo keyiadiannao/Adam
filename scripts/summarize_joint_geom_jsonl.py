@@ -93,12 +93,14 @@ def _config_group_key(meta: dict, n_rows: int) -> tuple:
     ho = int(meta.get("holdout_per_class") or 0)
     ev = int(meta.get("eval_every") or 0)
     mpc = int(meta.get("max_per_class") or -1)
+    post_mode = str(meta.get("post_task_mode") or "alternate")
     return (
         str(seed),
         str(meta.get("dataset", "?")),
         mpc,
         ho,
         ev,
+        post_mode,
         int(meta.get("anchor_steps", -1)),
         int(meta.get("post_steps", -1)),
         int(meta.get("B_grad", -1)),
@@ -207,7 +209,7 @@ def main() -> int:
         lines.append(f"file: {path.name}")
         lines.append(f"  seed: {seed}  adamw_lora: {adamw}")
         lines.append(
-            f"  meta: dataset={meta.get('dataset')} anchor={meta.get('anchor_steps')} "
+            f"  meta: dataset={meta.get('dataset')} post_mode={meta.get('post_task_mode', 'alternate')} anchor={meta.get('anchor_steps')} "
             f"post={meta.get('post_steps')} B={meta.get('B_grad')} r={meta.get('r_sub')} tau={meta.get('tau')}"
         )
         lines.append(f"  train_rows: {len(rows)}  last_step={last['step']} task={last['task']}")
@@ -251,7 +253,7 @@ def main() -> int:
     any_pair = False
     merge_notes: list[str] = []
 
-    for cfg_key in sorted(by_cfg.keys(), key=lambda k: (k[0], k[1], k[2], k[3], k[4], k[5], k[11])):
+    for cfg_key in sorted(by_cfg.keys(), key=lambda k: (k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[12])):
         group = by_cfg[cfg_key]
         subgeo = [x for x in group if not x["adamw_lora"]]
         adamw = [x for x in group if x["adamw_lora"]]
@@ -260,9 +262,9 @@ def main() -> int:
         merge_notes.extend(n1)
         merge_notes.extend(n2)
 
-        seed, ds, mpc, ho, ev_every, anch, post, bg, rsub, tau, lora_d, n_rows = cfg_key
+        seed, ds, mpc, ho, ev_every, post_mode, anch, post, bg, rsub, tau, lora_d, n_rows = cfg_key
         hdr = (
-            f"  cfg seed={seed} {ds} max_pc={mpc} holdout={ho} eval_every={ev_every} "
+            f"  cfg seed={seed} {ds} max_pc={mpc} holdout={ho} eval_every={ev_every} post_mode={post_mode} "
             f"rows={n_rows} anchor={anch} post={post} B={bg} r={rsub} tau={tau} lora_D={lora_d}"
         )
 

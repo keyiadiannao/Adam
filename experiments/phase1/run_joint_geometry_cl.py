@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-锚点训练（仅任务 0）→ 在锚点提取联合几何 (V_k, gamma) → 双任务交替训练（SubGeo 或 AdamW）。
+锚点训练（仅任务 0）→ 在锚点提取联合几何 (V_k, gamma) → 后段训练（交替/仅 task1；SubGeo 或 AdamW）。
 
 用于在 **真实 Hessian 截面 + 梯度子空间** 下初步观察相对随机 V 的差异；适合单机/服务器 Phase1。
 
@@ -90,6 +90,13 @@ def main() -> int:
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="cpu")
+    parser.add_argument(
+        "--post-task-mode",
+        type=str,
+        default="alternate",
+        choices=("alternate", "task1_only"),
+        help="后段任务采样：alternate=任务0/1交替；task1_only=仅训练任务1（更接近顺序CL遗忘压力）",
+    )
     parser.add_argument("--adamw-lora", action="store_true", help="提取后 LoRA 仍用 AdamW 基线")
     parser.add_argument("--save-vk", type=str, default="", help="可选：保存 V_k/gamma/lambdas 的 .pt 路径")
     parser.add_argument("--log", type=str, default="", help="JSONL 路径")
@@ -218,6 +225,7 @@ def main() -> int:
         "eval_batch_size": ebs,
         "anchor_steps": args.anchor_steps,
         "post_steps": args.post_steps,
+        "post_task_mode": args.post_task_mode,
         "B_grad": Bg,
         "r_sub": args.r_sub,
         "tau": float(args.tau),
@@ -254,9 +262,14 @@ def main() -> int:
     with open(log_path, "w", encoding="utf-8") as fp:
         fp.write(json.dumps(meta, ensure_ascii=False) + "\n")
         for step in range(args.post_steps):
-            task_id = step % 2
-            pool = train_t0 if task_id == 0 else train_t1
-            t_local = step // 2
+            if args.post_task_mode == "task1_only":
+                task_id = 1
+                pool = train_t1
+                t_local = step
+            else:
+                task_id = step % 2
+                pool = train_t0 if task_id == 0 else train_t1
+                t_local = step // 2
             idxs = batch_indices(len(pool), bs, t_local)
             batch = _make_batch(tok, pool, idxs, device, L)
             opt_lora.zero_grad()

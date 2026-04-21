@@ -20,13 +20,14 @@ py -3 experiments\phase1\run_phase1_smoke_all.py
 
 ### 锚点联合 \(V_k\) + 双任务（判别主线）
 
-在任务 0 上训练若干步作为 **锚点**，用 **B 个 batch 梯度矩阵 + r 次 Hvp** 提取 `extract_joint_vk_gamma`，再交替训练任务 0/1 并写 JSONL（`vtm_lora` 等）。与 `run_hf_real_two_task_cl.py` 中 **随机 \(V\)** 的调试管线区分：本脚本用于 **「是否值得推进」** 的初步实验。
+在任务 0 上训练若干步作为 **锚点**，用 **B 个 batch 梯度矩阵 + r 次 Hvp** 提取 `extract_joint_vk_gamma`，再在后段训练并写 JSONL（`vtm_lora` 等，支持交替任务或仅 task1）。与 `run_hf_real_two_task_cl.py` 中 **随机 \(V\)** 的调试管线区分：本脚本用于 **「是否值得推进」** 的初步实验。
 
 ```powershell
 py -3 experiments\phase1\run_joint_geometry_cl.py --dataset ag_news --anchor-steps 200 --post-steps 400 --B-grad 64 --r-sub 16 --tau 80 --device cuda
 py -3 experiments\phase1\run_joint_geometry_cl.py --adamw-lora  # 同上超参加此开关作对照
 # 推荐加 holdout + 周期性 eval（JSONL 内 kind:eval，与 CORE 遗忘 proxy 对齐）：
 # py -3 experiments\phase1\run_joint_geometry_cl.py ... --max-per-class 200 --holdout-per-class 40 --eval-every 20
+# 若要更贴近顺序CL遗忘压力：再加 --post-task-mode task1_only（默认 alternate）
 ```
 
 ## 1. 几何验证（仅 torch）
