@@ -68,6 +68,10 @@ def _eval_mean_loss(
     return tot / max(n, 1)
 
 
+def _concat_params_flat(params: list[torch.nn.Parameter]) -> torch.Tensor:
+    return torch.cat([p.reshape(-1) for p in params], dim=0)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Joint geometry at anchor + two-task CL")
     parser.add_argument("--dataset", type=str, default="ag_news", choices=("ag_news", "dbpedia_14"))
@@ -103,6 +107,19 @@ def main() -> int:
         default="asym",
         choices=("asym", "sym"),
         help="SubGeo 更新模式（仅在未启用 --adamw-lora 时生效）",
+    )
+    parser.add_argument(
+        "--geo-reg-lambda",
+        type=float,
+        default=0.0,
+        help="Loss层子空间正则系数（>0 启用）：L = L_task + lambda * ||w ⊙ (V_k^T Δθ_lora)||^2",
+    )
+    parser.add_argument(
+        "--geo-reg-weight",
+        type=str,
+        default="gamma",
+        choices=("gamma", "lambda_sqrt"),
+        help="子空间正则权重：gamma 或 sqrt(clamp(lambda,0))",
     )
     parser.add_argument("--adamw-lora", action="store_true", help="提取后 LoRA 仍用 AdamW 基线")
     parser.add_argument("--save-vk", type=str, default="", help="可选：保存 V_k/gamma/lambdas 的 .pt 路径")
@@ -185,7 +202,14 @@ def main() -> int:
 
     V_k = V_k.detach().to(device=device, dtype=next(iter(lora_params)).dtype)
     gamma = gamma.detach().to(device=device, dtype=V_k.dtype)
+    lambdas = lambdas.detach().to(device=device, dtype=V_k.dtype)
     V_log = V_k.clone()
+    anchor_lora_flat = _concat_params_flat(lora_params).detach().to(device=device, dtype=V_k.dtype).clone()
+    if args.geo_reg_weight == "lambda_sqrt":
+        reg_weight_vec = torch.sqrt(torch.clamp(lambdas, min=0.0))
+    else:
+        reg_weight_vec = gamma
+
     D = V_k.shape[0]
     if args.save_vk:
         payload = {
@@ -234,6 +258,8 @@ def main() -> int:
         "post_steps": args.post_steps,
         "post_task_mode": args.post_task_mode,
         "subgeo_mode": ("adamw" if args.adamw_lora else args.subgeo_mode),
+        "geo_reg_lambda": float(args.geo_reg_lambda),
+        "geo_reg_weight": args.geo_reg_weight,
         "B_grad": Bg,
         "r_sub": args.r_sub,
         "tau": float(args.tau),
@@ -285,7 +311,17 @@ def main() -> int:
                 opt_other.zero_grad()
             out = model(**batch)
             lv = float(out.loss.detach().cpu().item())
-            out.loss.backward()
+            if args.geo_reg_lambda > 0.0:
+                cur_lora_flat = _concat_params_flat(lora_params)
+                delta_flat = cur_lora_flat - anchor_lora_flat
+                proj = V_k.T @ delta_flat
+                reg_core = (reg_weight_vec * proj).pow(2).sum() / max(1, int(reg_weight_vec.numel()))
+                reg_loss = float(reg_core.detach().cpu().item())
+                total_loss = out.loss + float(args.geo_reg_lambda) * reg_core
+            else:
+                reg_loss = 0.0
+                total_loss = out.loss
+            total_loss.backward()
             opt_lora.step()
             if opt_other is not None:
                 opt_other.step()
@@ -295,7 +331,17 @@ def main() -> int:
                 m_flat = concat_subgeo_m_flat(opt_lora)
             vtm = momentum_energy_in_subspace(V_log, m_flat)
             fp.write(
-                json.dumps({"step": step, "task": task_id, "loss": lv, "vtm_lora": vtm}, ensure_ascii=False)
+                json.dumps(
+                    {
+                        "step": step,
+                        "task": task_id,
+                        "loss": lv,
+                        "reg_loss": reg_loss,
+                        "total_loss": float(total_loss.detach().cpu().item()),
+                        "vtm_lora": vtm,
+                    },
+                    ensure_ascii=False,
+                )
                 + "\n"
             )
             maybe_eval(fp, step)

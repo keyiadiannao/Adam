@@ -177,6 +177,13 @@ def main() -> int:
             continue
 
         adamw = bool(meta.get("adamw_lora", False))
+        geo_reg_lambda = float(meta.get("geo_reg_lambda") or 0.0)
+        if geo_reg_lambda > 0.0:
+            method_bucket = "treatment"
+        elif adamw:
+            method_bucket = "baseline"
+        else:
+            method_bucket = "treatment"
         seed = meta.get("seed", "n/a")
         m0 = _mean_tail(rows, 0, args.tail, "loss")
         m1 = _mean_tail(rows, 1, args.tail, "loss")
@@ -191,6 +198,7 @@ def main() -> int:
                 "stem": path.name,
                 "seed": seed,
                 "adamw_lora": adamw,
+                "method_bucket": method_bucket,
                 "n_steps": len(rows),
                 "n_evals": len(evals),
                 "cfg_key": cfg_key,
@@ -210,7 +218,8 @@ def main() -> int:
         lines.append(f"  seed: {seed}  adamw_lora: {adamw}")
         lines.append(
             f"  meta: dataset={meta.get('dataset')} post_mode={meta.get('post_task_mode', 'alternate')} "
-            f"subgeo_mode={meta.get('subgeo_mode', 'asym')} anchor={meta.get('anchor_steps')} "
+            f"subgeo_mode={meta.get('subgeo_mode', 'asym')} geo_reg_lambda={meta.get('geo_reg_lambda', 0)} "
+            f"anchor={meta.get('anchor_steps')} "
             f"post={meta.get('post_steps')} B={meta.get('B_grad')} r={meta.get('r_sub')} tau={meta.get('tau')}"
         )
         lines.append(f"  train_rows: {len(rows)}  last_step={last['step']} task={last['task']}")
@@ -249,17 +258,17 @@ def main() -> int:
     for s in summaries:
         by_cfg[s["cfg_key"]].append(s)
 
-    lines.append("--- SubGeo vs AdamW 尾窗 mean_loss 差（同配置、同 train_rows）---")
-    lines.append("  dloss = SubGeo - AdamW (负: SubGeo 尾窗 loss 更低)")
+    lines.append("--- Treatment vs Baseline 尾窗 mean_loss 差（同配置、同 train_rows）---")
+    lines.append("  dloss = treatment - baseline (负: treatment 尾窗 loss 更低)")
     any_pair = False
     merge_notes: list[str] = []
 
     for cfg_key in sorted(by_cfg.keys(), key=lambda k: (k[0], k[1], k[2], k[3], k[4], k[5], k[6], k[12])):
         group = by_cfg[cfg_key]
-        subgeo = [x for x in group if not x["adamw_lora"]]
-        adamw = [x for x in group if x["adamw_lora"]]
-        subgeo, n1 = _dedupe_by_metrics(subgeo, "SubGeo")
-        adamw, n2 = _dedupe_by_metrics(adamw, "AdamW")
+        subgeo = [x for x in group if x["method_bucket"] == "treatment"]
+        adamw = [x for x in group if x["method_bucket"] == "baseline"]
+        subgeo, n1 = _dedupe_by_metrics(subgeo, "Treatment")
+        adamw, n2 = _dedupe_by_metrics(adamw, "Baseline")
         merge_notes.extend(n1)
         merge_notes.extend(n2)
 
@@ -275,8 +284,8 @@ def main() -> int:
             d0 = a["mean_loss_t0_tail"] - b["mean_loss_t0_tail"]
             d1 = a["mean_loss_t1_tail"] - b["mean_loss_t1_tail"]
             lines.append(hdr)
-            lines.append(f"    subgeo_file: {a['stem']}")
-            lines.append(f"    adamw_file:  {b['stem']}")
+            lines.append(f"    treatment_file: {a['stem']}")
+            lines.append(f"    baseline_file:  {b['stem']}")
             lines.append(f"    dloss0={d0:+.6g}  dloss1={d1:+.6g}")
             if (
                 a.get("last_eval_e0") is not None
@@ -287,8 +296,8 @@ def main() -> int:
                 de0 = a["last_eval_e0"] - b["last_eval_e0"]
                 de1 = a["last_eval_e1"] - b["last_eval_e1"]
                 lines.append(
-                    f"    last_eval d(subgeo-adamw): de0={de0:+.6g} de1={de1:+.6g} "
-                    f"(holdout 遗忘 proxy；负表示 SubGeo 更低)"
+                    f"    last_eval d(treatment-baseline): de0={de0:+.6g} de1={de1:+.6g} "
+                    f"(holdout 遗忘 proxy；负表示 treatment 更低)"
                 )
             lines.append("")
         elif len(subgeo) == 0 or len(adamw) == 0:

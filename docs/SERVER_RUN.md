@@ -107,6 +107,16 @@ python experiments/phase1/run_joint_geometry_cl.py --dataset ag_news \
 
 若要做机制消融（`CORE` 的对称对照），可在 SubGeo 运行时加 `--subgeo-mode sym`；主方法保持 `--subgeo-mode asym`（默认）。
 
+若要做**止损转向**（不改 Adam 内核）：可启用 Loss 层子空间正则（推荐与 `--adamw-lora` 配合）：
+
+```bash
+python experiments/phase1/run_joint_geometry_cl.py --dataset ag_news --adamw-lora \
+  --post-task-mode task1_only --geo-reg-lambda 0.05 --geo-reg-weight lambda_sqrt \
+  --max-per-class 200 --holdout-per-class 40 --eval-every 20 --seed 0 \
+  --anchor-steps 200 --post-steps 400 --B-grad 64 --r-sub 16 --tau 200 \
+  --batch-size 8 --max-length 128 --device cuda
+```
+
 对照 AdamW LoRA：同一组超参下加 `--adamw-lora` 再跑一遍；多种子可用 `for SEED in 0 1 2; do ... --seed $SEED --log ...; done`。
 
 **E. 绑图（下载 JSONL 到本机后）**
