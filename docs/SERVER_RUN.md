@@ -11,7 +11,7 @@
 
 ## 2. Git：本地仓库已与服务器对齐方式
 
-**本地（`d:\cursor_try\Evidence`）**：已执行 `git init`、根目录 `.gitignore`、**首提交** `3137e78`（分支名当前为 `master`）。之后改代码：
+**本地（`d:\cursor_try\Evidence`）**：已执行 `git init`、根目录 `.gitignore`、首提交与远程 **`https://github.com/keyiadiannao/Adam`**（默认分支 `main`）。之后改代码：
 
 ```powershell
 Set-Location d:\cursor_try\Evidence
@@ -26,19 +26,19 @@ git commit -m "描述本次改动"
 2. 本地添加远程并推送（HTTPS 示例，把 URL 换成你的）：
 
 ```powershell
-git remote add origin https://github.com/<你的用户名>/Evidence.git
+git remote add origin https://github.com/keyiadiannao/Adam.git
 git branch -M main
 git push -u origin main
 ```
 
-若远程默认仍想用 `master`：可省略 `git branch -M main`，改为 `git push -u origin master`。
+若远程默认仍想用 `master`：可省略 `git branch -M main`，改为 `git push -u origin master`。若本机已存在 `origin`：`git remote set-url origin https://github.com/keyiadiannao/Adam.git`。
 
 **AutoDL 上拉代码**：
 
 ```bash
 mkdir -p /root/autodl-tmp/work && cd /root/autodl-tmp/work
-git clone https://github.com/<你的用户名>/Evidence.git
-cd Evidence
+git clone https://github.com/keyiadiannao/Adam.git
+cd Adam
 mkdir -p runs && git rev-parse HEAD > runs/manual_git_sha.txt
 ```
 
