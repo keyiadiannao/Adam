@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+
+# 实验产物（大、可再生成）
+runs/
+experiments/phase1/logs/
+*.jsonl
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# IDE / 系统
+.idea/
+.vscode/*.log
+.DS_Store
+Thumbs.db
+.cursor/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 可选：本地下载的 HF 权重缓存（若在项目内）
+# models--*/
