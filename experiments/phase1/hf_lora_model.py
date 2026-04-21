@@ -24,12 +24,20 @@ def load_distilgpt2_peft_lora_seqcls(
     cfg.id2label = {0: "neg", 1: "pos"}
     cfg.label2id = {"neg": 0, "pos": 1}
     cfg.pad_token_id = pad_id
-    base = AutoModelForSequenceClassification.from_pretrained(
-        model_id,
-        config=cfg,
-        torch_dtype=torch.float32,
-        ignore_mismatched_sizes=True,
-    )
+    load_kw: dict = {
+        "config": cfg,
+        "torch_dtype": torch.float32,
+        "ignore_mismatched_sizes": True,
+    }
+    # 避免 SDPA 融合路径在 Hvp 二阶反传上缺失算子；旧版 transformers 无此参数则忽略。
+    try:
+        base = AutoModelForSequenceClassification.from_pretrained(
+            model_id,
+            attn_implementation="eager",
+            **load_kw,
+        )
+    except TypeError:
+        base = AutoModelForSequenceClassification.from_pretrained(model_id, **load_kw)
     base.config.pad_token_id = pad_id
 
     lora = LoraConfig(

@@ -8,9 +8,32 @@
 """
 from __future__ import annotations
 
+import contextlib
 from typing import Callable, Iterable, List, Tuple
 
 import torch
+
+
+def _sdp_safe_for_second_order():
+    """
+    做 Hvp / 二阶 autograd 时禁用 Flash 与 MemEfficient SDP，仅用 MATH 后端。
+    否则 GPT2 等使用融合 SDPA 时常见：
+    RuntimeError: derivative for aten::_scaled_dot_product_efficient_attention_backward is not implemented
+    """
+    try:
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+
+        return sdpa_kernel(backends=[SDPBackend.MATH])
+    except Exception:
+        pass
+    if getattr(torch.backends, "cuda", None) is not None and torch.cuda.is_available():
+        try:
+            return torch.backends.cuda.sdp_kernel(
+                enable_flash=False, enable_mem_efficient=False, enable_math=True
+            )
+        except Exception:
+            pass
+    return contextlib.nullcontext()
 
 
 def apply_pd(g_flat: torch.Tensor, V: torch.Tensor, gamma: torch.Tensor) -> torch.Tensor:
@@ -128,11 +151,12 @@ def projected_hessian(
     """
     r = V.shape[1]
     cols = []
-    for j in range(r):
-        v_flat = V[:, j].contiguous()
-        loss = loss_fn()
-        hv_flat = hvp_flat(loss, params, v_flat, shapes)
-        cols.append(V.T @ hv_flat)
+    with _sdp_safe_for_second_order():
+        for j in range(r):
+            v_flat = V[:, j].contiguous()
+            loss = loss_fn()
+            hv_flat = hvp_flat(loss, params, v_flat, shapes)
+            cols.append(V.T @ hv_flat)
     return torch.stack(cols, dim=1)
 
 
