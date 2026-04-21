@@ -147,8 +147,10 @@ def main() -> int:
             "r_sub": int(args.r_sub),
             "B_grad": int(Bg),
         }
-        torch.save(payload, args.save_vk)
-        print("saved vk payload ->", args.save_vk)
+        vk_path = Path(args.save_vk).expanduser()
+        vk_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(payload, str(vk_path))
+        print("saved vk payload ->", vk_path)
 
     if args.adamw_lora:
         opt_lora = torch.optim.AdamW(lora_params, lr=args.lr, weight_decay=0.0)
