@@ -44,6 +44,19 @@ mkdir -p runs && git rev-parse HEAD > runs/manual_git_sha.txt
 
 私有仓库：在 AutoDL 上配置 **SSH 公钥** 或 **HTTPS Token**（勿把密码写在脚本里）。
 
+**GitHub `git pull` / `clone` 报 TLS / GnuTLS（如 -110）**：多为到 `github.com` 的链路不稳。可依次尝试：
+
+1. 重试几次；或 `git config --global http.postBuffer 524288000` 后再 `git pull`。
+2. **改用 SSH 远程**（控制台已绑公钥）：`git remote set-url origin git@github.com:keyiadiannao/Adam.git && git pull`。
+3. **单文件 zip（可行，仅换代码时）**：用 `wget`/`curl` 拉 **`main` 分支源码包**（仍是 GitHub，若仍 TLS 失败需换能访问的镜像或本机下载后 scp 上传）：
+   ```bash
+   cd /root/autodl-tmp/work
+   wget -O Adam-main.zip https://github.com/keyiadiannao/Adam/archive/refs/heads/main.zip
+   unzip -o Adam-main.zip && rm -rf Adam && mv Adam-main Adam && cd Adam
+   ```
+   说明：zip **不含 `.git`**，之后无法用 `git pull` 更新，只适合救急；长期仍建议修好 Git 或镜像后再 `clone`。
+4. 将仓库 **同步到 Gitee / 实验室 Git** 再在节点上 `clone` 该地址（国内常更稳）。
+
 固定随机种子：`--seed` 及 PyTorch `manual_seed_all`（若脚本未全设，在提交作业前补一行）。
 
 **依赖装好后先跑一键校验**（与 §3-A 等价，便于复制）：
