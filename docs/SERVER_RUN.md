@@ -105,6 +105,8 @@ python experiments/phase1/run_joint_geometry_cl.py --dataset ag_news \
 
 若要更贴近“先学旧任务、后学新任务”的遗忘压力，可在后段加 `--post-task-mode task1_only`（默认 `alternate` 为任务0/1交替）。
 
+若要做机制消融（`CORE` 的对称对照），可在 SubGeo 运行时加 `--subgeo-mode sym`；主方法保持 `--subgeo-mode asym`（默认）。
+
 对照 AdamW LoRA：同一组超参下加 `--adamw-lora` 再跑一遍；多种子可用 `for SEED in 0 1 2; do ... --seed $SEED --log ...; done`。
 
 **E. 绑图（下载 JSONL 到本机后）**

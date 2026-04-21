@@ -209,7 +209,8 @@ def main() -> int:
         lines.append(f"file: {path.name}")
         lines.append(f"  seed: {seed}  adamw_lora: {adamw}")
         lines.append(
-            f"  meta: dataset={meta.get('dataset')} post_mode={meta.get('post_task_mode', 'alternate')} anchor={meta.get('anchor_steps')} "
+            f"  meta: dataset={meta.get('dataset')} post_mode={meta.get('post_task_mode', 'alternate')} "
+            f"subgeo_mode={meta.get('subgeo_mode', 'asym')} anchor={meta.get('anchor_steps')} "
             f"post={meta.get('post_steps')} B={meta.get('B_grad')} r={meta.get('r_sub')} tau={meta.get('tau')}"
         )
         lines.append(f"  train_rows: {len(rows)}  last_step={last['step']} task={last['task']}")

@@ -97,6 +97,13 @@ def main() -> int:
         choices=("alternate", "task1_only"),
         help="后段任务采样：alternate=任务0/1交替；task1_only=仅训练任务1（更接近顺序CL遗忘压力）",
     )
+    parser.add_argument(
+        "--subgeo-mode",
+        type=str,
+        default="asym",
+        choices=("asym", "sym"),
+        help="SubGeo 更新模式（仅在未启用 --adamw-lora 时生效）",
+    )
     parser.add_argument("--adamw-lora", action="store_true", help="提取后 LoRA 仍用 AdamW 基线")
     parser.add_argument("--save-vk", type=str, default="", help="可选：保存 V_k/gamma/lambdas 的 .pt 路径")
     parser.add_argument("--log", type=str, default="", help="JSONL 路径")
@@ -203,7 +210,7 @@ def main() -> int:
             weight_decay=0.0,
             V=V_k,
             gamma=gamma,
-            mode="asym",
+            mode=args.subgeo_mode,
         )
     opt_other = torch.optim.AdamW(other_params, lr=args.lr, weight_decay=0.01) if other_params else None
 
@@ -226,6 +233,7 @@ def main() -> int:
         "anchor_steps": args.anchor_steps,
         "post_steps": args.post_steps,
         "post_task_mode": args.post_task_mode,
+        "subgeo_mode": ("adamw" if args.adamw_lora else args.subgeo_mode),
         "B_grad": Bg,
         "r_sub": args.r_sub,
         "tau": float(args.tau),
