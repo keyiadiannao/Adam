@@ -57,7 +57,8 @@ bash scripts/dev_verify.sh
 **多组 `joint_geom_*.jsonl` 跑完后**：生成一段短报告（含同 seed 下 SubGeo vs AdamW 尾窗 loss 差），整段复制即可，无需手抄终端：
 
 ```bash
-python scripts/summarize_joint_geom_jsonl.py experiments/phase1/logs/ --glob 'joint_geom*.jsonl' | tee JOINT_SUMMARY.txt
+# 建议忽略短烟雾（如仅 2/6 步）；再整段复制终端输出即可
+python scripts/summarize_joint_geom_jsonl.py experiments/phase1/logs/ --glob 'joint_geom*.jsonl' --min-rows 200 | tee JOINT_SUMMARY.txt
 ```
 
 ## 3. 门闸命令（由轻到重）

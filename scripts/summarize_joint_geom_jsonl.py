@@ -3,12 +3,12 @@
 汇总 run_joint_geometry_cl.py 产出的 JSONL，生成一段可直接粘贴到聊天/ issue 的短报告。
 
 用法（服务器）:
-  python scripts/summarize_joint_geom_jsonl.py experiments/phase1/logs/joint_geom*.jsonl
   python scripts/summarize_joint_geom_jsonl.py experiments/phase1/logs/ --glob 'joint_geom*.jsonl'
+  python scripts/summarize_joint_geom_jsonl.py experiments/phase1/logs/ --glob 'joint_geom*.jsonl' --min-rows 200
 
-落盘 + 终端同时有（便于下载一个文件）:
+落盘 + 终端同时有:
   python scripts/summarize_joint_geom_jsonl.py experiments/phase1/logs/ --glob 'joint_geom*.jsonl' \\
-    --out /root/autodl-tmp/work/Adam/JOINT_SUMMARY.txt && cat /root/autodl-tmp/work/Adam/JOINT_SUMMARY.txt
+    | tee JOINT_SUMMARY.txt
 """
 from __future__ import annotations
 
@@ -47,7 +47,6 @@ def _collect_paths(inputs: list[str], glob_pat: str | None) -> list[Path]:
             paths.append(p)
         else:
             print("warn: skip missing path", raw, file=sys.stderr)
-    # de-dupe preserve order
     seen: set[str] = set()
     out: list[Path] = []
     for q in paths:
@@ -85,31 +84,59 @@ def _mean_tail(rows: list[dict], task: int, k: int, key: str) -> float:
     return sum(float(r[key]) for r in tail) / len(tail)
 
 
+def _config_group_key(meta: dict, n_rows: int) -> tuple:
+    """同 key 视为同一实验配置 + 同长度曲线（可配对 SubGeo vs AdamW）。"""
+    seed = meta.get("seed", "n/a")
+    return (
+        str(seed),
+        str(meta.get("dataset", "?")),
+        int(meta.get("anchor_steps", -1)),
+        int(meta.get("post_steps", -1)),
+        int(meta.get("B_grad", -1)),
+        int(meta.get("r_sub", -1)),
+        float(meta.get("tau", 0.0)),
+        int(meta.get("lora_D", -1)),
+        int(n_rows),
+    )
+
+
+def _tail_metrics_sig(s: dict) -> tuple:
+    return (
+        round(float(s["mean_loss_t0_tail"]), 6),
+        round(float(s["mean_loss_t1_tail"]), 6),
+        round(float(s["mean_vtm_t0_tail"]), 6),
+        round(float(s["mean_vtm_t1_tail"]), 6),
+    )
+
+
+def _dedupe_by_metrics(entries: list[dict], label: str) -> tuple[list[dict], list[str]]:
+    """指标完全相同的重复文件只保留一条，并记录说明。"""
+    notes: list[str] = []
+    by_sig: dict[tuple, dict] = {}
+    order: list[tuple] = []
+    for e in entries:
+        sig = _tail_metrics_sig(e)
+        if sig not in by_sig:
+            by_sig[sig] = e
+            order.append(sig)
+        else:
+            prev = by_sig[sig]["stem"]
+            notes.append(f"{label}: 合并重复指标 {prev} ≈ {e['stem']}")
+    return [by_sig[s] for s in order], notes
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Summarize joint_geometry_cl JSONL logs")
+    ap.add_argument("inputs", nargs="+", help="JSONL 文件或目录（与 --glob）")
+    ap.add_argument("--glob", type=str, default=None, help="目录下 glob，默认 joint_geom*.jsonl")
+    ap.add_argument("--tail", type=int, default=50, help="每 task 尾窗步数平均")
     ap.add_argument(
-        "inputs",
-        nargs="+",
-        help="JSONL 文件路径，或目录（与 --glob 联用）",
-    )
-    ap.add_argument(
-        "--glob",
-        type=str,
-        default=None,
-        help="当 inputs 为目录时使用的 glob，默认 joint_geom*.jsonl",
-    )
-    ap.add_argument(
-        "--tail",
+        "--min-rows",
         type=int,
-        default=50,
-        help="按 task 统计「最后 N 条」训练步的平均 loss / vtm",
+        default=0,
+        help="忽略训练行数少于此值的文件（例如烟雾用 --min-rows 50）",
     )
-    ap.add_argument(
-        "--out",
-        type=str,
-        default="",
-        help="可选：把报告写入该文件（UTF-8）",
-    )
+    ap.add_argument("--out", type=str, default="", help="写入 UTF-8 文本路径")
     args = ap.parse_args()
 
     root = Path(__file__).resolve().parents[1]
@@ -121,17 +148,23 @@ def main() -> int:
     lines: list[str] = []
     lines.append("=== SubGeo joint_geometry_cl 汇总（可整段粘贴）===")
     lines.append(f"repo_git_short: {_try_git_head(root)}")
-    lines.append(f"tail_n: {args.tail}")
+    lines.append(f"tail_n: {args.tail}  min_rows_filter: {args.min_rows or 'off'}")
     lines.append("")
 
     summaries: list[dict] = []
+    skipped_short: list[str] = []
+
     for path in paths:
         meta, rows = _parse_jsonl(path)
         if not rows:
-            lines.append(f"file: {path}")
+            lines.append(f"file: {path.name}")
             lines.append("  ERROR: no train rows")
             lines.append("")
             continue
+        if len(rows) < args.min_rows:
+            skipped_short.append(f"{path.name} (rows={len(rows)})")
+            continue
+
         adamw = bool(meta.get("adamw_lora", False))
         seed = meta.get("seed", "n/a")
         m0 = _mean_tail(rows, 0, args.tail, "loss")
@@ -139,6 +172,7 @@ def main() -> int:
         v0 = _mean_tail(rows, 0, args.tail, "vtm_lora")
         v1 = _mean_tail(rows, 1, args.tail, "vtm_lora")
         last = rows[-1]
+        cfg_key = _config_group_key(meta, len(rows))
         summaries.append(
             {
                 "path": str(path),
@@ -146,6 +180,8 @@ def main() -> int:
                 "seed": seed,
                 "adamw_lora": adamw,
                 "n_steps": len(rows),
+                "cfg_key": cfg_key,
+                "meta": meta,
                 "mean_loss_t0_tail": m0,
                 "mean_loss_t1_tail": m1,
                 "mean_vtm_t0_tail": v0,
@@ -157,33 +193,93 @@ def main() -> int:
         )
         lines.append(f"file: {path.name}")
         lines.append(f"  seed: {seed}  adamw_lora: {adamw}")
-        lines.append(f"  post_steps: {len(rows)}  last_step task: {last['step']} task={last['task']}")
+        lines.append(
+            f"  meta: dataset={meta.get('dataset')} anchor={meta.get('anchor_steps')} "
+            f"post={meta.get('post_steps')} B={meta.get('B_grad')} r={meta.get('r_sub')} tau={meta.get('tau')}"
+        )
+        lines.append(f"  train_rows: {len(rows)}  last_step={last['step']} task={last['task']}")
         lines.append(f"  mean_loss_task0_last{args.tail}: {m0:.6g}")
         lines.append(f"  mean_loss_task1_last{args.tail}: {m1:.6g}")
         lines.append(f"  mean_vtm_task0_last{args.tail}:   {v0:.6g}")
         lines.append(f"  mean_vtm_task1_last{args.tail}:   {v1:.6g}")
         lines.append("")
 
-    # 按 seed 粗配对提示
-    by_seed: dict[str, list[dict]] = defaultdict(list)
+    if skipped_short:
+        lines.append("--- 已跳过（行数 < min_rows）---")
+        for s in skipped_short:
+            lines.append(f"  {s}")
+        lines.append("")
+
+    if not summaries:
+        lines.append("--- (无文件进入统计：提高 min_rows 门槛过严，或目录下无 joint_geom JSONL) ---")
+        lines.append("")
+        lines.append("=== 以上结束 ===")
+        text = "\n".join(lines)
+        print(text)
+        if args.out.strip():
+            Path(args.out).expanduser().write_text(text + "\n", encoding="utf-8")
+        return 0
+
+    # 按 (seed, 超参, 行数) 分组配对
+    by_cfg: dict[tuple, list[dict]] = defaultdict(list)
     for s in summaries:
-        sk = str(s.get("seed", "?"))
-        by_seed[sk].append(s)
-    lines.append("--- 同 seed 下 SubGeo(False) vs AdamW(True) 尾窗 mean_loss 差（task0 / task1）---")
-    for sk, group in sorted(by_seed.items(), key=lambda x: x[0]):
+        by_cfg[s["cfg_key"]].append(s)
+
+    lines.append("--- SubGeo vs AdamW 尾窗 mean_loss 差（同配置、同 train_rows）---")
+    lines.append("  dloss = SubGeo - AdamW (负: SubGeo 尾窗 loss 更低)")
+    any_pair = False
+    merge_notes: list[str] = []
+
+    for cfg_key in sorted(by_cfg.keys(), key=lambda k: (k[0], k[1], k[2], k[8])):
+        group = by_cfg[cfg_key]
         subgeo = [x for x in group if not x["adamw_lora"]]
         adamw = [x for x in group if x["adamw_lora"]]
-        if len(subgeo) != 1 or len(adamw) != 1:
-            lines.append(f"  seed {sk}: 条目数 subgeo={len(subgeo)} adamw={len(adamw)}（跳过自动对比）")
-            continue
-        a, b = subgeo[0], adamw[0]
-        d0 = a["mean_loss_t0_tail"] - b["mean_loss_t0_tail"]
-        d1 = a["mean_loss_t1_tail"] - b["mean_loss_t1_tail"]
-        lines.append(
-            f"  seed {sk}: Δloss0(subgeo-adamw)={d0:+.6g}  Δloss1={d1:+.6g}  "
-            f"(负表示 SubGeo 尾窗更低)"
+        subgeo, n1 = _dedupe_by_metrics(subgeo, "SubGeo")
+        adamw, n2 = _dedupe_by_metrics(adamw, "AdamW")
+        merge_notes.extend(n1)
+        merge_notes.extend(n2)
+
+        seed, ds, anch, post, bg, rsub, tau, lora_d, n_rows = cfg_key
+        hdr = (
+            f"  cfg seed={seed} {ds} rows={n_rows} anchor={anch} post={post} B={bg} r={rsub} tau={tau} lora_D={lora_d}"
         )
-    lines.append("")
+
+        if len(subgeo) == 1 and len(adamw) == 1:
+            any_pair = True
+            a, b = subgeo[0], adamw[0]
+            d0 = a["mean_loss_t0_tail"] - b["mean_loss_t0_tail"]
+            d1 = a["mean_loss_t1_tail"] - b["mean_loss_t1_tail"]
+            lines.append(hdr)
+            lines.append(f"    subgeo_file: {a['stem']}")
+            lines.append(f"    adamw_file:  {b['stem']}")
+            lines.append(f"    dloss0={d0:+.6g}  dloss1={d1:+.6g}")
+            lines.append("")
+        elif len(subgeo) == 0 or len(adamw) == 0:
+            lines.append(hdr)
+            lines.append(f"    仅一侧: subgeo={len(subgeo)} adamw={len(adamw)}（跳过）")
+            lines.append("")
+        else:
+            lines.append(hdr)
+            lines.append(f"    仍ambiguous: subgeo={len(subgeo)} adamw={len(adamw)}（需删旧日志或指定文件路径）")
+            for x in subgeo:
+                lines.append(f"      [SubGeo] {x['stem']}  m0={x['mean_loss_t0_tail']:.6g} m1={x['mean_loss_t1_tail']:.6g}")
+            for x in adamw:
+                lines.append(f"      [AdamW]  {x['stem']}  m0={x['mean_loss_t0_tail']:.6g} m1={x['mean_loss_t1_tail']:.6g}")
+            lines.append("")
+
+    if merge_notes:
+        lines.append("--- 合并说明（同配置下指标全同的重复文件）---")
+        for n in merge_notes:
+            lines.append(f"  {n}")
+        lines.append("")
+
+    if not any_pair and summaries:
+        lines.append(
+            "  hint: 若均为 seed n/a，已按「meta+train_rows」分组；"
+            "可用 --min-rows 200 忽略短烟雾；或清理 logs 里旧 joint_geom 再汇总。"
+        )
+        lines.append("")
+
     lines.append("=== 以上结束 ===")
 
     text = "\n".join(lines)
