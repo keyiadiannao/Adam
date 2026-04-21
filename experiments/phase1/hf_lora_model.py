@@ -12,19 +12,22 @@ def load_distilgpt2_peft_lora_seqcls(
     model_id: str = "distilgpt2",
 ) -> tuple[torch.nn.Module, Any, int]:
     from peft import LoraConfig, TaskType, get_peft_model
-    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(model_id, use_fast=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     pad_id = int(tok.pad_token_id) if tok.pad_token_id is not None else int(tok.eos_token_id)
 
+    cfg = AutoConfig.from_pretrained(model_id)
+    cfg.num_labels = 2
+    cfg.id2label = {0: "neg", 1: "pos"}
+    cfg.label2id = {"neg": 0, "pos": 1}
+    cfg.pad_token_id = pad_id
     base = AutoModelForSequenceClassification.from_pretrained(
         model_id,
-        num_labels=2,
-        id2label={0: "neg", 1: "pos"},
-        label2id={"neg": 0, "pos": 1},
-        dtype=torch.float32,
+        config=cfg,
+        torch_dtype=torch.float32,
         ignore_mismatched_sizes=True,
     )
     base.config.pad_token_id = pad_id

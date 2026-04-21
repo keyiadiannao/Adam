@@ -6,7 +6,7 @@
 
 - Python 3.10+，CUDA 与 PyTorch 版本写入 `runs/<id>/env.txt`（`python -V`、`pip freeze` 头 80 行）。
 - 安装：`pip install -r experiments/phase1/requirements_hf.txt`；绑图另装 `requirements_plot.txt`。
-- Hugging Face：默认镜像见 `hf_hub_endpoint.py`；官方 Hub 则 `EVIDENCE_HF_MIRROR=0`。
+- Hugging Face：默认镜像见 `experiments/phase1/hf_hub_endpoint.py`；官方 Hub 则 `EVIDENCE_HF_MIRROR=0`。
 - 建议设置：`HF_HOME` 或 `TRANSFORMERS_CACHE` 指向节点本地高速盘；`TOKENIZERS_PARALLELISM=false`。
 
 ## 2. Git：本地仓库已与服务器对齐方式
@@ -45,6 +45,14 @@ mkdir -p runs && git rev-parse HEAD > runs/manual_git_sha.txt
 私有仓库：在 AutoDL 上配置 **SSH 公钥** 或 **HTTPS Token**（勿把密码写在脚本里）。
 
 固定随机种子：`--seed` 及 PyTorch `manual_seed_all`（若脚本未全设，在提交作业前补一行）。
+
+**依赖装好后先跑一键校验**（与 §3-A 等价，便于复制）：
+
+```bash
+cd /path/to/Adam   # 你的 clone 目录
+source .venv/bin/activate
+bash scripts/dev_verify.sh
+```
 
 ## 3. 门闸命令（由轻到重）
 
@@ -106,7 +114,7 @@ runs/
 #SBATCH --time=04:00:00
 #SBATCH -o runs/%x-%j.out
 
-cd /path/to/Evidence
+cd /path/to/Adam
 python experiments/phase1/run_joint_geometry_cl.py --device cuda \
   --dataset ag_news --anchor-steps 200 --post-steps 400 --B-grad 64 --r-sub 16
 ```
