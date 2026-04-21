@@ -85,13 +85,25 @@ python experiments/phase1/run_hf_real_two_task_cl.py --dataset ag_news --run-bot
 
 **D. 锚点联合几何 + 双任务（判别主线的最低实现）**
 
+仅训练集尾窗 loss（无 holdout）：
+
 ```bash
 python experiments/phase1/run_joint_geometry_cl.py --dataset ag_news \
   --anchor-steps 200 --post-steps 400 --B-grad 64 --r-sub 16 --tau 80 \
   --batch-size 8 --max-length 128 --device cuda --save-vk runs/ag_news_vk.pt
 ```
 
-对照 AdamW LoRA：在 **同一组超参** 下再加 `--adamw-lora` 重跑一遍，便于对比 JSONL。
+**推荐（与 `CORE` 遗忘 proxy 对齐）**：划 holdout，并周期性写 `kind:eval` 行（可与 `plot_hf_real_cl_log.py` 绑图）：
+
+```bash
+python experiments/phase1/run_joint_geometry_cl.py --dataset ag_news \
+  --max-per-class 200 --holdout-per-class 40 --eval-every 20 --eval-batch-size 16 \
+  --anchor-steps 200 --post-steps 400 --B-grad 64 --r-sub 16 --tau 80 \
+  --batch-size 8 --max-length 128 --device cuda --seed 0 \
+  --log experiments/phase1/logs/joint_geom_ag_news_seed0_subgeo.jsonl
+```
+
+对照 AdamW LoRA：同一组超参下加 `--adamw-lora` 再跑一遍；多种子可用 `for SEED in 0 1 2; do ... --seed $SEED --log ...; done`。
 
 **E. 绑图（下载 JSONL 到本机后）**
 

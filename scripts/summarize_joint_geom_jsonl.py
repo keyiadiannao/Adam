@@ -57,9 +57,10 @@ def _collect_paths(inputs: list[str], glob_pat: str | None) -> list[Path]:
     return out
 
 
-def _parse_jsonl(path: Path) -> tuple[dict, list[dict]]:
+def _parse_jsonl(path: Path) -> tuple[dict, list[dict], list[dict]]:
     meta: dict = {}
     rows: list[dict] = []
+    evals: list[dict] = []
     with open(path, encoding="utf-8") as fp:
         for line in fp:
             line = line.strip()
@@ -71,9 +72,11 @@ def _parse_jsonl(path: Path) -> tuple[dict, list[dict]]:
                 or ("lora_D" in o and "adamw_lora" in o and "anchor_steps" in o)
             ):
                 meta = o
+            elif isinstance(o, dict) and o.get("kind") == "eval":
+                evals.append(o)
             elif isinstance(o, dict) and "step" in o and "loss" in o and "task" in o:
                 rows.append(o)
-    return meta, rows
+    return meta, rows, evals
 
 
 def _mean_tail(rows: list[dict], task: int, k: int, key: str) -> float:
@@ -87,9 +90,15 @@ def _mean_tail(rows: list[dict], task: int, k: int, key: str) -> float:
 def _config_group_key(meta: dict, n_rows: int) -> tuple:
     """同 key 视为同一实验配置 + 同长度曲线（可配对 SubGeo vs AdamW）。"""
     seed = meta.get("seed", "n/a")
+    ho = int(meta.get("holdout_per_class") or 0)
+    ev = int(meta.get("eval_every") or 0)
+    mpc = int(meta.get("max_per_class") or -1)
     return (
         str(seed),
         str(meta.get("dataset", "?")),
+        mpc,
+        ho,
+        ev,
         int(meta.get("anchor_steps", -1)),
         int(meta.get("post_steps", -1)),
         int(meta.get("B_grad", -1)),
@@ -155,7 +164,7 @@ def main() -> int:
     skipped_short: list[str] = []
 
     for path in paths:
-        meta, rows = _parse_jsonl(path)
+        meta, rows, evals = _parse_jsonl(path)
         if not rows:
             lines.append(f"file: {path.name}")
             lines.append("  ERROR: no train rows")
@@ -173,6 +182,7 @@ def main() -> int:
         v1 = _mean_tail(rows, 1, args.tail, "vtm_lora")
         last = rows[-1]
         cfg_key = _config_group_key(meta, len(rows))
+        last_eval = evals[-1] if evals else None
         summaries.append(
             {
                 "path": str(path),
@@ -180,6 +190,7 @@ def main() -> int:
                 "seed": seed,
                 "adamw_lora": adamw,
                 "n_steps": len(rows),
+                "n_evals": len(evals),
                 "cfg_key": cfg_key,
                 "meta": meta,
                 "mean_loss_t0_tail": m0,
@@ -189,6 +200,8 @@ def main() -> int:
                 "last_step": int(last["step"]),
                 "last_loss": float(last["loss"]),
                 "last_task": int(last["task"]),
+                "last_eval_e0": float(last_eval["eval_loss_task0"]) if last_eval else None,
+                "last_eval_e1": float(last_eval["eval_loss_task1"]) if last_eval else None,
             }
         )
         lines.append(f"file: {path.name}")
@@ -202,6 +215,14 @@ def main() -> int:
         lines.append(f"  mean_loss_task1_last{args.tail}: {m1:.6g}")
         lines.append(f"  mean_vtm_task0_last{args.tail}:   {v0:.6g}")
         lines.append(f"  mean_vtm_task1_last{args.tail}:   {v1:.6g}")
+        if last_eval is not None:
+            lines.append(
+                f"  last_eval(step={last_eval['step']}): "
+                f"eval_loss_task0={float(last_eval['eval_loss_task0']):.6g} "
+                f"eval_loss_task1={float(last_eval['eval_loss_task1']):.6g}"
+            )
+        else:
+            lines.append("  last_eval: (无 eval 行；可加 --holdout-per-class 与 --eval-every)")
         lines.append("")
 
     if skipped_short:
@@ -230,7 +251,7 @@ def main() -> int:
     any_pair = False
     merge_notes: list[str] = []
 
-    for cfg_key in sorted(by_cfg.keys(), key=lambda k: (k[0], k[1], k[2], k[8])):
+    for cfg_key in sorted(by_cfg.keys(), key=lambda k: (k[0], k[1], k[2], k[3], k[4], k[5], k[11])):
         group = by_cfg[cfg_key]
         subgeo = [x for x in group if not x["adamw_lora"]]
         adamw = [x for x in group if x["adamw_lora"]]
@@ -239,9 +260,10 @@ def main() -> int:
         merge_notes.extend(n1)
         merge_notes.extend(n2)
 
-        seed, ds, anch, post, bg, rsub, tau, lora_d, n_rows = cfg_key
+        seed, ds, mpc, ho, ev_every, anch, post, bg, rsub, tau, lora_d, n_rows = cfg_key
         hdr = (
-            f"  cfg seed={seed} {ds} rows={n_rows} anchor={anch} post={post} B={bg} r={rsub} tau={tau} lora_D={lora_d}"
+            f"  cfg seed={seed} {ds} max_pc={mpc} holdout={ho} eval_every={ev_every} "
+            f"rows={n_rows} anchor={anch} post={post} B={bg} r={rsub} tau={tau} lora_D={lora_d}"
         )
 
         if len(subgeo) == 1 and len(adamw) == 1:
@@ -253,6 +275,18 @@ def main() -> int:
             lines.append(f"    subgeo_file: {a['stem']}")
             lines.append(f"    adamw_file:  {b['stem']}")
             lines.append(f"    dloss0={d0:+.6g}  dloss1={d1:+.6g}")
+            if (
+                a.get("last_eval_e0") is not None
+                and b.get("last_eval_e0") is not None
+                and a.get("last_eval_e1") is not None
+                and b.get("last_eval_e1") is not None
+            ):
+                de0 = a["last_eval_e0"] - b["last_eval_e0"]
+                de1 = a["last_eval_e1"] - b["last_eval_e1"]
+                lines.append(
+                    f"    last_eval d(subgeo-adamw): de0={de0:+.6g} de1={de1:+.6g} "
+                    f"(holdout 遗忘 proxy；负表示 SubGeo 更低)"
+                )
             lines.append("")
         elif len(subgeo) == 0 or len(adamw) == 0:
             lines.append(hdr)

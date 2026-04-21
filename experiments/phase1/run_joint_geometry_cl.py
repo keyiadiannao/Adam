@@ -40,11 +40,46 @@ def _make_batch(tok, rows, idxs, device, max_length):
     return tokenize_batch(tok, rows, idxs, device, max_length)
 
 
+def _eval_mean_loss(
+    model: torch.nn.Module,
+    tok: object,
+    rows: list,
+    device: torch.device,
+    max_length: int,
+    eval_batch_size: int,
+) -> float:
+    if not rows:
+        return float("nan")
+    was_training = model.training
+    model.eval()
+    tot, n = 0.0, 0
+    try:
+        with torch.no_grad():
+            for i in range(0, len(rows), eval_batch_size):
+                sub = rows[i : i + eval_batch_size]
+                batch = tokenize_batch(tok, sub, list(range(len(sub))), device, max_length)
+                out = model(**batch)
+                bs = int(batch["labels"].shape[0])
+                tot += float(out.loss.detach().cpu().item()) * bs
+                n += bs
+    finally:
+        if was_training:
+            model.train()
+    return tot / max(n, 1)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Joint geometry at anchor + two-task CL")
     parser.add_argument("--dataset", type=str, default="ag_news", choices=("ag_news", "dbpedia_14"))
     parser.add_argument("--max-per-class", type=int, default=120)
     parser.add_argument("--holdout-per-class", type=int, default=0)
+    parser.add_argument(
+        "--eval-every",
+        type=int,
+        default=0,
+        help="每 N 步在 holdout 上写一行 eval（0=关闭；需 holdout>0）",
+    )
+    parser.add_argument("--eval-batch-size", type=int, default=16)
     parser.add_argument("--anchor-steps", type=int, default=25)
     parser.add_argument("--post-steps", type=int, default=50)
     parser.add_argument("--B-grad", type=int, default=8, help="收集 G 的 batch 数（≥2，建议 ≥max(2r,64) 时改大）")
@@ -68,7 +103,7 @@ def main() -> int:
     torch.manual_seed(args.seed)
 
     try:
-        train_t0, train_t1, _, _ = build_two_task_pools(
+        train_t0, train_t1, eval_t0, eval_t1 = build_two_task_pools(
             args.dataset,
             args.max_per_class,
             args.holdout_per_class,
@@ -170,10 +205,17 @@ def main() -> int:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     log_path = args.log.strip() or str(log_dir / f"joint_geom_{args.dataset}_{ts}.jsonl")
 
+    eval_every = int(args.eval_every)
+    ebs = int(args.eval_batch_size)
+
     meta = {
         "kind": "joint_geometry_cl_meta",
         "dataset": args.dataset,
         "seed": int(args.seed),
+        "max_per_class": int(args.max_per_class),
+        "holdout_per_class": int(args.holdout_per_class),
+        "eval_every": eval_every,
+        "eval_batch_size": ebs,
         "anchor_steps": args.anchor_steps,
         "post_steps": args.post_steps,
         "B_grad": Bg,
@@ -182,7 +224,32 @@ def main() -> int:
         "lora_D": D,
         "adamw_lora": bool(args.adamw_lora),
         "hf_endpoint": os.environ.get("HF_ENDPOINT"),
+        "len_train_task0": len(train_t0),
+        "len_train_task1": len(train_t1),
+        "len_eval_task0": len(eval_t0),
+        "len_eval_task1": len(eval_t1),
     }
+
+    def maybe_eval(fp, step_after: int) -> None:
+        if eval_every <= 0 or (not eval_t0 and not eval_t1):
+            return
+        if (step_after + 1) % eval_every != 0:
+            return
+        e0 = _eval_mean_loss(model, tok, eval_t0, device, L, ebs)
+        e1 = _eval_mean_loss(model, tok, eval_t1, device, L, ebs)
+        fp.write(
+            json.dumps(
+                {
+                    "kind": "eval",
+                    "step": step_after,
+                    "eval_loss_task0": e0,
+                    "eval_loss_task1": e1,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+        fp.flush()
 
     with open(log_path, "w", encoding="utf-8") as fp:
         fp.write(json.dumps(meta, ensure_ascii=False) + "\n")
@@ -210,6 +277,7 @@ def main() -> int:
                 json.dumps({"step": step, "task": task_id, "loss": lv, "vtm_lora": vtm}, ensure_ascii=False)
                 + "\n"
             )
+            maybe_eval(fp, step)
 
     print("joint_geometry_cl: OK ->", log_path)
     return 0

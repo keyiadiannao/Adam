@@ -98,7 +98,11 @@ def main() -> int:
     ax_eval.grid(True, alpha=0.3)
     ds = first_meta.get("dataset", "") if first_meta else ""
     tau = first_meta.get("tau", "") if first_meta else ""
-    fig.suptitle(f"HF two-task CL  {ds}  tau={tau}", fontsize=11)
+    kind = str(first_meta.get("kind", "")) if first_meta else ""
+    if "joint_geometry" in kind:
+        fig.suptitle(f"Joint geometry CL  {ds}  tau={tau}", fontsize=11)
+    else:
+        fig.suptitle(f"HF two-task CL  {ds}  tau={tau}", fontsize=11)
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
