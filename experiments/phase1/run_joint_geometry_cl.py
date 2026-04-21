@@ -173,6 +173,7 @@ def main() -> int:
     meta = {
         "kind": "joint_geometry_cl_meta",
         "dataset": args.dataset,
+        "seed": int(args.seed),
         "anchor_steps": args.anchor_steps,
         "post_steps": args.post_steps,
         "B_grad": Bg,

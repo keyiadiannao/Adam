@@ -9,6 +9,7 @@ env/
 
 # 实验产物（大、可再生成）
 runs/
+JOINT_SUMMARY.txt
 experiments/phase1/logs/
 *.jsonl
 

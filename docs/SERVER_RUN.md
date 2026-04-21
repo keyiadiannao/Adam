@@ -44,40 +44,6 @@ mkdir -p runs && git rev-parse HEAD > runs/manual_git_sha.txt
 
 私有仓库：在 AutoDL 上配置 **SSH 公钥** 或 **HTTPS Token**（勿把密码写在脚本里）。
 
-**GitHub `git pull` / `clone` / `wget` 一直卡或 TLS 错（AutoDL 常见）**：节点访问 `github.com` 可能整条链路都不稳，**不要和服务器死磕**。按下面选一种**不经过容器内直连 GitHub** 的方式即可。
-
-**节点上仍可先试（偶尔能好）：**
-
-1. `git config --global http.postBuffer 524288000` 后多执行几次 `git pull`。
-2. 已绑 GitHub SSH 公钥时：`git remote set-url origin git@github.com:keyiadiannao/Adam.git && git pull`（走 SSH 22，与 HTTPS 443 不同路径）。
-
-**仍不行——用下面之一（推荐顺序）：**
-
-- **A. 本机（Windows）打包 → 单文件上传服务器（最稳）**  
-  在你有完整仓库的电脑上（PowerShell，在仓库根 `Evidence`/`Adam` 目录）：
-  ```powershell
-  git archive --format=zip -o $env:USERPROFILE\Desktop\Adam-src.zip HEAD
-  ```
-  用 **AutoDL 网页「文件上传」**、**WinSCP**、或 **scp** 把 `Adam-src.zip` 传到例如 `/root/autodl-tmp/work/`，再在服务器：
-  ```bash
-  cd /root/autodl-tmp/work && rm -rf Adam && mkdir Adam && cd Adam && unzip -q ../Adam-src.zip && ls scripts
-  ```
-  说明：`git archive` **不含 `.git`**，适合救火；以后更新再在 PC 打 zip 覆盖一次，或改用 B。
-
-- **B. Gitee 做中转（节点上可长期 `git pull`）**  
-  在 Gitee **新建仓库 → 从 GitHub/GitLab 导入** `keyiadiannao/Adam`，在服务器：
-  `git clone https://gitee.com/<你的空间>/<仓库名>.git`  
-  （导入在网页完成，**只在浏览器**连 GitHub 一次即可。）
-
-- **C. 本机 `scp` 整个目录**（本机已能 SSH 登录实例时）  
-  ```powershell
-  scp -r -P <SSH端口> D:\cursor_try\Evidence root@<主机>:/root/autodl-tmp/work/Adam
-  ```
-  可与 `.venv` 一并排除：先打 zip（如用 7-Zip 排除 `.venv`）再 scp 更快。
-
-- **D. `git bundle`（单个大文件，保留提交历史）**  
-  本机：`git bundle create Adam-main.bundle main` → 上传 bundle → 服务器：`git clone Adam-main.bundle Adam`
-
 固定随机种子：`--seed` 及 PyTorch `manual_seed_all`（若脚本未全设，在提交作业前补一行）。
 
 **依赖装好后先跑一键校验**（与 §3-A 等价，便于复制）：
@@ -86,6 +52,12 @@ mkdir -p runs && git rev-parse HEAD > runs/manual_git_sha.txt
 cd /path/to/Adam   # 你的 clone 目录
 source .venv/bin/activate
 bash scripts/dev_verify.sh
+```
+
+**多组 `joint_geom_*.jsonl` 跑完后**：生成一段短报告（含同 seed 下 SubGeo vs AdamW 尾窗 loss 差），整段复制即可，无需手抄终端：
+
+```bash
+python scripts/summarize_joint_geom_jsonl.py experiments/phase1/logs/ --glob 'joint_geom*.jsonl' | tee JOINT_SUMMARY.txt
 ```
 
 ## 3. 门闸命令（由轻到重）
