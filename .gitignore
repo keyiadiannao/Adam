@@ -16,6 +16,9 @@ experiments/phase1/logs/
 .env
 .env.*
 !.env.example
+# 本地 SSH 凭据（勿把密码写进仓库）
+local/seetacloud.env
+local/ssh_seetacloud_user.config
 
 # IDE / 系统
 .idea/

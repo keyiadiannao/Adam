@@ -1,0 +1,16 @@
+# 用法（Windows / OpenSSH）：
+# 1) 将本文件复制为 %USERPROFILE%\.ssh\config 中的一段 Host，或：
+#    ssh -F "d:\cursor_try\Evidence\local\ssh_seetacloud_user.config" seetacloud-adam
+# 2) 在 SeetaCloud / AutoDL 控制台绑定你的 **公钥**（推荐），勿把 root 密码写入任何文件。
+#
+# 生成密钥示例（在 PowerShell 中）：
+#   ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\id_ed25519_seetacloud -N '""'
+# 然后把 .pub 内容粘贴到控制台「SSH 公钥」。
+
+Host seetacloud-adam
+  HostName connect.westd.seetacloud.com
+  Port 46162
+  User root
+  # 尚无 id_ed25519_seetacloud 时，可先注释下面两行，改用默认 ~/.ssh/id_ed25519 或 id_rsa（须已在控制台绑定对应公钥）
+  IdentityFile ~/.ssh/id_ed25519_seetacloud
+  IdentitiesOnly yes
