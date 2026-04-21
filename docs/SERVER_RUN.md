@@ -9,12 +9,40 @@
 - Hugging Face：默认镜像见 `hf_hub_endpoint.py`；官方 Hub 则 `EVIDENCE_HF_MIRROR=0`。
 - 建议设置：`HF_HOME` 或 `TRANSFORMERS_CACHE` 指向节点本地高速盘；`TOKENIZERS_PARALLELISM=false`。
 
-## 2. 仓库与可复现
+## 2. Git：本地仓库已与服务器对齐方式
+
+**本地（`d:\cursor_try\Evidence`）**：已执行 `git init`、根目录 `.gitignore`、**首提交** `3137e78`（分支名当前为 `master`）。之后改代码：
+
+```powershell
+Set-Location d:\cursor_try\Evidence
+git add -A
+git status
+git commit -m "描述本次改动"
+```
+
+**第一次推到远程（任选 GitHub / Gitee / 实验室 Git）**：
+
+1. 在网页上新建 **空仓库**（不要勾选自动添加 README，避免冲突）。
+2. 本地添加远程并推送（HTTPS 示例，把 URL 换成你的）：
+
+```powershell
+git remote add origin https://github.com/<你的用户名>/Evidence.git
+git branch -M main
+git push -u origin main
+```
+
+若远程默认仍想用 `master`：可省略 `git branch -M main`，改为 `git push -u origin master`。
+
+**AutoDL 上拉代码**：
 
 ```bash
-git clone <your-repo-url> Evidence && cd Evidence
-git rev-parse HEAD > runs/manual_git_sha.txt
+mkdir -p /root/autodl-tmp/work && cd /root/autodl-tmp/work
+git clone https://github.com/<你的用户名>/Evidence.git
+cd Evidence
+mkdir -p runs && git rev-parse HEAD > runs/manual_git_sha.txt
 ```
+
+私有仓库：在 AutoDL 上配置 **SSH 公钥** 或 **HTTPS Token**（勿把密码写在脚本里）。
 
 固定随机种子：`--seed` 及 PyTorch `manual_seed_all`（若脚本未全设，在提交作业前补一行）。
 
