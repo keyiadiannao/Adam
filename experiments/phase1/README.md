@@ -25,6 +25,8 @@ py -3 experiments\phase1\run_phase1_smoke_all.py
 ```powershell
 py -3 experiments\phase1\run_joint_geometry_cl.py --dataset ag_news --anchor-steps 200 --post-steps 400 --B-grad 64 --r-sub 16 --tau 80 --device cuda
 py -3 experiments\phase1\run_joint_geometry_cl.py --adamw-lora  # 同上超参加此开关作对照
+# 推荐加 holdout + 周期性 eval（JSONL 内 kind:eval，与 CORE 遗忘 proxy 对齐）：
+# py -3 experiments\phase1\run_joint_geometry_cl.py ... --max-per-class 200 --holdout-per-class 40 --eval-every 20
 ```
 
 ## 1. 几何验证（仅 torch）
